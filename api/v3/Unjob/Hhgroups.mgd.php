@@ -9,8 +9,8 @@ return [
     'entity' => 'Job',
     'params' => [
       'version' => 3,
-      'name' => 'Call Unjob.Hhgroups API',
-      'description' => 'Call Unjob.Hhgroups API',
+      'name' => 'Heads of Household Group Sync',
+      'description' => 'When webforms alter group memberships (subscriptions) for one Head of Houshold, propagate to any others. Calls Unjob.hhgroups API',
       'run_frequency' => 'Daily',
       'api_entity' => 'Unjob',
       'api_action' => 'Hhgroups',
