@@ -55,15 +55,68 @@ function civicrm_api3_unjob_Hhgroups($params) {
   //Merge keys (household IDs) from both lists
   $hh_list = $subs_hhs + $rel_hhs;
 
-  //Get all Heads of Households and the groups they're in
+  //Process each hh
+  foreach ($hh_list as $hh_id => $unused) {
+    
+    //Get all Heads of Household
+    $hhh_rels = civicrm_api3('Relationship', 'get', [
+      'contact_id_b' => $hh_id,
+      'relationship_type_id' => 7,
+      'is_active' => 1,
+    ]);
 
-  //Consolidate all Households to the most recent status per group
+    //Process Heads and Groups in each Household
+    if ($hhh_rels['count'] < 2) continue; //Sync only applies if multiple heads
+    $hh_groups = [];
+    foreach ($hhh_rels['values'] as $hhh_rel) {
+      $head = $hhh_rel['contacts_id_a'];
+      
+      //Get groups for each head. Assumes a group will only show up once
+      $head_groups[$head] = civicrm_api3('GroupContact', 'get', [
+        'sequential' => 1,
+        'status' => "", //Needed to get both "Added" and "Removed"status
+        'contact_id' => $head,
+      ])['values'];
 
-  //Ignore hh+group where method wasn't Webform or group isn't PARENTS
+      //Prepare groups for syncing
+      if (count($head_groups[$head]) == 0) continue; //No groups
+      foreach ($head_groups[$head] as &$group) { //Modify elements by reference
+        
+        //Consolidate Adds and Removes
+        if (isset($group['in_method'])) {
+          $group['status'] = "Added";
+          $group['method'] = $group['in_method'];
+          $group['timestamp'] = strtotime($group['in_date']);
+        } else {
+          $group['status'] = "Removed";
+          $group['method'] = $group['out_method'];
+          $group['timestamp'] = strtotime($group['out_date']);
+        }
 
-  //If hh added to group & Head is absent or removed by Web/API, add Head
+        //For the household, track only the most recent Webform activity on Parents groups
+        if (!strpos(strtoupper($group['title']), 'PARENTS')) continue;
+        if ($group['method'] != 'Webform') continue;
+        if (!isset($hh_groups[$group['group_id']])) $hh_groups[$group['group_id']] = $group;
+        else if ($group['timestamp'] > $hh_groups[$group['group_id']]['timestamp']) $hh_groups[$group['group_id']] = $group;
+      }
 
-  //If hh removed from group & Head is added by Web/API, remove Head
+      ob_start();
+      print("Groups for Household $hh_id Head $head:");
+      print_r($head_groups[$head]);
+      Civi::log()->debug(ob_get_clean());
+
+    }
+
+    ob_start();
+    print("Actionable groups for Household $hh_id:");
+    print_r($hh_groups);
+    Civi::log()->debug(ob_get_clean());
+
+    //If hh added to group & Head is absent or removed by Web/API, add Head
+
+    //If hh removed from group & Head is added by Web/API, remove Head
+  }
+
 
   //Update job parameters so next run picks up where this one left off
 
@@ -75,23 +128,6 @@ function civicrm_api3_unjob_Hhgroups($params) {
   $job_return = ['subs_hhs' => count($subs_hhs), 'rel_hhs' => count($rel_hhs)];
   return civicrm_api3_create_success($job_return, $params, 'Unjob', 'Hhgroups');
   
-  // if (array_key_exists('magicword', $params) && $params['magicword'] == 'sesame') {
-  //   $returnValues = array(
-  //     // OK, return several data rows
-  //     12 => ['id' => 12, 'name' => 'Twelve'],
-  //     34 => ['id' => 34, 'name' => 'Thirty four'],
-  //     56 => ['id' => 56, 'name' => 'Fifty six'],
-  //   );
-  //   // ALTERNATIVE: $returnValues = []; // OK, success
-  //   // ALTERNATIVE: $returnValues = ["Some value"]; // OK, return a single value
-
-  //   // Spec: civicrm_api3_create_success($values = 1, $params = [], $entity = NULL, $action = NULL)
-  //   return civicrm_api3_create_success($returnValues, $params, 'Job', 'HhGroups');
-  // }
-  // else {
-  //   throw new API_Exception(/*error_message*/ 'Everyone knows that the magicword is "sesame"', /*error_code*/ 'magicword_incorrect');
-  // }
-
 }
 
 //Return an array of unique household IDs where a Head has had group activity
@@ -118,7 +154,7 @@ SQL;
     $last_subscription = $subsDAO->id; //Records must be sorted ascending by ID for this to work
 
     //Get all Head of hh relationships for this contact
-    $hhh_rel = civicrm_api3('Relationship', 'get', [
+    $hhh_rels = civicrm_api3('Relationship', 'get', [
       'contact_id_a' => $subsDAO->contact_id,
       'relationship_type_id' => 7,
       'is_active' => 1,
@@ -126,7 +162,7 @@ SQL;
 
     //Build the list of household IDs, values[] is empty if this contact not a head of hh
     //Use keys in $hh_list so any hh shows up only once
-    foreach ($hhh_rel['values'] as $value) {
+    foreach ($hhh_rels['values'] as $value) {
       $hh_list[$value['contact_id_b']] = 0;
       Civi::log()->debug("subs head id: $subsDAO->contact_id and hh id: $value[contact_id_b]");
     }
@@ -141,7 +177,7 @@ SQL;
 //This will miss a relationship that's edited to Head of Household
 function relationship_hhs(&$last_household) {
 
-  $hhh_rel = civicrm_api3('Relationship', 'get', [
+  $hhh_rels = civicrm_api3('Relationship', 'get', [
     'id' => ['>' => $last_household],
     'relationship_type_id' => 7,
     'is_active' => 1,
@@ -151,7 +187,7 @@ function relationship_hhs(&$last_household) {
   //Build the list of household IDs, values[] is empty if a contact not a head of hh
   //Use keys in $hh_list so any hh shows up only once
   $hh_list = [];
-  foreach ($hhh_rel['values'] as $key => $value) {
+  foreach ($hhh_rels['values'] as $key => $value) {
     $hh_list[$value['contact_id_b']] = 0;
     $last_household = $key;
     Civi::log()->debug("rel head id: $value[contact_id_a] and hh id: $value[contact_id_b]");
