@@ -48,14 +48,12 @@ function civicrm_api3_unjob_Hhgroups($params) {
     //Execution stops
   }
 
+  //Find households with subscription (group) activity or new Head of hh since last run
   $subs_hhs = subscription_hhs($last_subscription); //Argument by reference, modified
-  $rel_hhs = []; $last_household += 10; //relationship_hhs($last_household);  //Argument by reference, modified
-  //$hh_list = $subs_hhs + $rel_hhs; //Merges keys from both lists
+  $rel_hhs = relationship_hhs($last_household);  //Argument by reference, modified
 
-  //Get hh's where a Head relationship has been added since last run
-  //This will miss a relationship that's edited to Head of Household
-
-  //Combine the two hh lists
+  //Merge keys (household IDs) from both lists
+  $hh_list = $subs_hhs + $rel_hhs;
 
   //Get all Heads of Households and the groups they're in
 
@@ -123,17 +121,42 @@ SQL;
     $hhh_rel = civicrm_api3('Relationship', 'get', [
       'contact_id_a' => $subsDAO->contact_id,
       'relationship_type_id' => 7,
+      'is_active' => 1,
     ]);
 
     //Build the list of household IDs, values[] is empty if this contact not a head of hh
     //Use keys in $hh_list so any hh shows up only once
     foreach ($hhh_rel['values'] as $value) {
-      $hh_list[$value["contact_id_b"]] = 0;
-      //Civi::log()->debug("head id: $subsDAO->contact_id and hh id: $value[contact_id_b]");
+      $hh_list[$value['contact_id_b']] = 0;
+      Civi::log()->debug("subs head id: $subsDAO->contact_id and hh id: $value[contact_id_b]");
     }
 
   }
 
   return $hh_list;
+
+}
+
+//Return an array of unique household IDs where a Head relationship has been added since last run
+//This will miss a relationship that's edited to Head of Household
+function relationship_hhs(&$last_household) {
+
+  $hhh_rel = civicrm_api3('Relationship', 'get', [
+    'id' => ['>' => $last_household],
+    'relationship_type_id' => 7,
+    'is_active' => 1,
+    'options' => ['limit' => 10, 'sort' => 'id ASC'],
+  ]);
+  
+  //Build the list of household IDs, values[] is empty if a contact not a head of hh
+  //Use keys in $hh_list so any hh shows up only once
+  $hh_list = [];
+  foreach ($hhh_rel['values'] as $key => $value) {
+    $hh_list[$value['contact_id_b']] = 0;
+    $last_household = $key;
+    Civi::log()->debug("rel head id: $value[contact_id_a] and hh id: $value[contact_id_b]");
+  }
+
+  return $hh_list;  
 
 }
