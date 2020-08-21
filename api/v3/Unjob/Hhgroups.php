@@ -12,7 +12,7 @@ use CRM_Unutils_ExtensionUtil as E;
 function _civicrm_api3_unjob_Hhgroups_spec(&$spec) {
   // $spec['magicword']['api.required'] = 1;
   $spec['last_subscription']['api.required'] = 1;
-  $spec['last_household']['api.required'] = 1;
+  $spec['last_relation']['api.required'] = 1;
 }
 
 /**
@@ -29,10 +29,10 @@ function _civicrm_api3_unjob_Hhgroups_spec(&$spec) {
  */
 function civicrm_api3_unjob_Hhgroups($params) {
   $last_subscription = $params['last_subscription'];
-  $last_household = $params['last_household'];
+  $last_relation = $params['last_relation'];
 
   //Validate parameters
-  if (!($last_subscription > 0) || !($last_household > 0)) {
+  if (!($last_subscription > 0) || !($last_relation > 0)) {
     throw new API_Exception(/*error_message*/ "Parameters must be subscription and household ID's", /*error_code*/ 'parameter_error');
     //Execution stops
   }
@@ -50,12 +50,12 @@ function civicrm_api3_unjob_Hhgroups($params) {
 
   //Find households with subscription (group) activity or new Head of hh since last run
   $subs_hhs = subscription_hhs($last_subscription); //Argument by reference, modified
-  $rel_hhs = relationship_hhs($last_household);  //Argument by reference, modified
+  $rel_hhs = relationship_hhs($last_relation);  //Argument by reference, modified
 
   //Merge keys (household IDs) from both lists
   $hh_list = $subs_hhs + $rel_hhs;
 
-  //Process each hh
+  //Process each household
   foreach ($hh_list as $hh_id => $unused) {
     
     //Get all Heads of Household
@@ -65,22 +65,35 @@ function civicrm_api3_unjob_Hhgroups($params) {
       'is_active' => 1,
     ]);
 
+    ob_start();
+    print("HHH Relations for Household $hh_id:");
+    print_r($hhh_rels);
+    Civi::log()->debug(ob_get_clean());
+
     //Process Heads and Groups in each Household
     if ($hhh_rels['count'] < 2) continue; //Sync only applies if multiple heads
-    $hh_groups = [];
+    $heads_groups = []; //Groups for each Head of the household
+    $hh_groups = []; //Unique Parents groups for the household
     foreach ($hhh_rels['values'] as $hhh_rel) {
-      $head = $hhh_rel['contacts_id_a'];
+      $head = $hhh_rel['contact_id_a'];
       
       //Get groups for each head. Assumes a group will only show up once
-      $head_groups[$head] = civicrm_api3('GroupContact', 'get', [
-        'sequential' => 1,
+      $heads_groups[$head] = civicrm_api3('GroupContact', 'get', [
+        'sequential' => 1, //The values[] keys aren't useful
         'status' => "", //Needed to get both "Added" and "Removed"status
         'contact_id' => $head,
       ])['values'];
 
+      ob_start();
+      print("Groups for Household $hh_id Head $head before:");
+      print_r($heads_groups[$head]);
+      Civi::log()->debug(ob_get_clean());
+
       //Prepare groups for syncing
-      if (count($head_groups[$head]) == 0) continue; //No groups
-      foreach ($head_groups[$head] as &$group) { //Modify elements by reference
+      if (count($heads_groups[$head]) == 0) continue; //No groups for this Head
+      $group_keys = [];
+      foreach ($heads_groups[$head] as &$group) { //Modify elements by reference
+        $group_keys[] = $group['group_id'];
         
         //Consolidate Adds and Removes
         if (isset($group['in_method'])) {
@@ -93,16 +106,18 @@ function civicrm_api3_unjob_Hhgroups($params) {
           $group['timestamp'] = strtotime($group['out_date']);
         }
 
-        //For the household, track only the most recent Webform activity on Parents groups
+        //For the household, track only the most recent activity on Parents groups
         if (!strpos(strtoupper($group['title']), 'PARENTS')) continue;
-        if ($group['method'] != 'Webform') continue;
         if (!isset($hh_groups[$group['group_id']])) $hh_groups[$group['group_id']] = $group;
         else if ($group['timestamp'] > $hh_groups[$group['group_id']]['timestamp']) $hh_groups[$group['group_id']] = $group;
       }
 
+      //Set the keys to the group id
+      $heads_groups[$head] = array_combine($group_keys, $heads_groups[$head]);
+
       ob_start();
-      print("Groups for Household $hh_id Head $head:");
-      print_r($head_groups[$head]);
+      print("Groups for Household $hh_id Head $head after:");
+      print_r($heads_groups[$head]);
       Civi::log()->debug(ob_get_clean());
 
     }
@@ -112,9 +127,37 @@ function civicrm_api3_unjob_Hhgroups($params) {
     print_r($hh_groups);
     Civi::log()->debug(ob_get_clean());
 
-    //If hh added to group & Head is absent or removed by Web/API, add Head
+    //hh_groups is now the actionable Parents groups across all heads of the household
+    foreach ($hh_groups as $group_id => $hh_group) {
+      foreach ($heads_groups as $head => $head_groups) {
+          
+        //The head does not have the HH group
+        if (!isset($head_groups[$group_id])) {
+          //If the HH group has been removed, do nothing
+          if ($hh_group['status'] == 'Removed') continue;
+          //Otherwise add the head to the group
+          else Civi::log()->debug("Adding $head to $hh_group[title]");
 
-    //If hh removed from group & Head is added by Web/API, remove Head
+        //The head has the HH group
+        } else {
+          $head_group = $head_groups[$group_id];
+
+          //The status is the same, do nothing
+          if ($head_group['status'] == $hh_group['status']) continue;
+          //If the head's group was removed programatically, re-add it
+          else if ($hh_group['status'] == 'Added' && 
+              $head_group['status'] == 'Removed' &&
+              array_search($head_group['method'], ['Webform', 'API'])
+          ) Civi::log()->debug("Re-adding $head to $hh_group[title]");
+          //If the househld group was removed by webform and the head's had been added programatically, remove it
+          else if ($hh_group['status'] == 'Removed' && 
+              $hh_group['method'] == 'Webform' && 
+              $head_group['status'] == 'Added' &&
+              array_search($head_group['method'], ['Webform', 'API'])
+          ) Civi::log()->debug("Removing $head from $hh_group[title]");
+        }
+      }
+    }
   }
 
 
@@ -122,7 +165,7 @@ function civicrm_api3_unjob_Hhgroups($params) {
 
   $job_out = civicrm_api3('Job', 'create', [
     'id' => $job_in["id"],
-    'parameters' => "last_subscription=$last_subscription\nlast_household=$last_household",
+    'parameters' => "last_subscription=$last_subscription\nlast_relation=$last_relation",
   ]);
 
   $job_return = ['subs_hhs' => count($subs_hhs), 'rel_hhs' => count($rel_hhs)];
@@ -135,14 +178,14 @@ function civicrm_api3_unjob_Hhgroups($params) {
 //The &parameter comes in as the last ID processed in the previous run, leaves as last ID on this run
 function subscription_hhs(&$last_subscription) {
 
-  //SQL to extract the most recent Webform action on any contact+group
+  //SQL to extract the most recent action on any contact+group
   $subsSQL = <<<SQL
 select *
 from civicrm_subscription_history
 where id in
  (select max(id)
   from civicrm_subscription_history
-  where method = "Webform" and id > $last_subscription
+  where id > $last_subscription
   group by contact_id, group_id
   order by max(id))
 limit 10
@@ -164,7 +207,7 @@ SQL;
     //Use keys in $hh_list so any hh shows up only once
     foreach ($hhh_rels['values'] as $value) {
       $hh_list[$value['contact_id_b']] = 0;
-      Civi::log()->debug("subs head id: $subsDAO->contact_id and hh id: $value[contact_id_b]");
+      //Civi::log()->debug("subs head id: $subsDAO->contact_id and hh id: $value[contact_id_b]");
     }
 
   }
@@ -175,10 +218,10 @@ SQL;
 
 //Return an array of unique household IDs where a Head relationship has been added since last run
 //This will miss a relationship that's edited to Head of Household
-function relationship_hhs(&$last_household) {
+function relationship_hhs(&$last_relation) {
 
   $hhh_rels = civicrm_api3('Relationship', 'get', [
-    'id' => ['>' => $last_household],
+    'id' => ['>' => $last_relation],
     'relationship_type_id' => 7,
     'is_active' => 1,
     'options' => ['limit' => 10, 'sort' => 'id ASC'],
@@ -189,8 +232,8 @@ function relationship_hhs(&$last_household) {
   $hh_list = [];
   foreach ($hhh_rels['values'] as $key => $value) {
     $hh_list[$value['contact_id_b']] = 0;
-    $last_household = $key;
-    Civi::log()->debug("rel head id: $value[contact_id_a] and hh id: $value[contact_id_b]");
+    $last_relation = $key;
+    //Civi::log()->debug("rel head id: $value[contact_id_a] and hh id: $value[contact_id_b]");
   }
 
   return $hh_list;  
