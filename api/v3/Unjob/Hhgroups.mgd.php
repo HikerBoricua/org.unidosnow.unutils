@@ -9,12 +9,12 @@ return [
     'entity' => 'Job',
     'params' => [
       'version' => 3,
-      'name' => 'Heads of Household Group Sync',
-      'description' => 'Scan for membership (subscriptions) changes in Parents groups involving a Head of Houshold.\nPropagate additions to all other Heads of the Household (unless previously removed by Admin).\nPropagate removals only if the most recent was by Webform and the other Heads additions were by API or Webform.\nCalls Unjob.hhgroups API',
+      'name' => 'Heads of HH Parents Group Sync',
+      'description' => 'Scan for changes in Parents groups re. a Head of Household. Propagate adds to other Heads of the HH (unless previously removed by Admin). Propagate removals only if the most recent was by Webform and the other Heads additions were by API or Webform.',
       'run_frequency' => 'Hourly',
       'api_entity' => 'Unjob',
       'api_action' => 'Hhgroups',
-      'parameters' => 'last_subscription=1\nlast_relation=1',
+      'parameters' => "last_subscription=1\nlast_relation=1",
     ],
   ],
 ];
