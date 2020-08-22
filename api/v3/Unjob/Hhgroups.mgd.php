@@ -10,11 +10,11 @@ return [
     'params' => [
       'version' => 3,
       'name' => 'Heads of Household Group Sync',
-      'description' => 'When webforms alter group memberships (subscriptions) for one Head of Houshold, propagate to any others. Calls Unjob.hhgroups API',
-      'run_frequency' => 'Daily',
+      'description' => 'Scan for membership (subscriptions) changes in Parents groups involving a Head of Houshold.\nPropagate additions to all other Heads of the Household (unless previously removed by Admin).\nPropagate removals only if the most recent was by Webform and the other Heads additions were by API or Webform.\nCalls Unjob.hhgroups API',
+      'run_frequency' => 'Hourly',
       'api_entity' => 'Unjob',
       'api_action' => 'Hhgroups',
-      'parameters' => '',
+      'parameters' => 'last_subscription=1\nlast_relation=1',
     ],
   ],
 ];

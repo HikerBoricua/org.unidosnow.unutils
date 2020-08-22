@@ -30,6 +30,7 @@ function _civicrm_api3_unjob_Hhgroups_spec(&$spec) {
 function civicrm_api3_unjob_Hhgroups($params) {
   $last_subscription = $params['last_subscription'];
   $last_relation = $params['last_relation'];
+  $job_return = [];
 
   //Validate parameters
   if (!($last_subscription > 0) || !($last_relation > 0)) {
@@ -57,6 +58,7 @@ function civicrm_api3_unjob_Hhgroups($params) {
 
   //Process each household
   foreach ($hh_list as $hh_id => $unused) {
+    $job_return[$hh_id] = ['heads' => 0, 'groups' => 0, 'added' => 0, 're-added' => 0, 'removed' => 0];
     
     //Get all Heads of Household
     $hhh_rels = civicrm_api3('Relationship', 'get', [
@@ -64,11 +66,13 @@ function civicrm_api3_unjob_Hhgroups($params) {
       'relationship_type_id' => 7,
       'is_active' => 1,
     ]);
-
+    $job_return[$hh_id]['heads'] = $hhh_rels['count'];
+    /*
     ob_start();
     print("HHH Relations for Household $hh_id:");
     print_r($hhh_rels);
     Civi::log()->debug(ob_get_clean());
+    */
 
     //Process Heads and Groups in each Household
     if ($hhh_rels['count'] < 2) continue; //Sync only applies if multiple heads
@@ -84,10 +88,12 @@ function civicrm_api3_unjob_Hhgroups($params) {
         'contact_id' => $head,
       ])['values'];
 
+      /*
       ob_start();
       print("Groups for Household $hh_id Head $head before:");
       print_r($heads_groups[$head]);
       Civi::log()->debug(ob_get_clean());
+      */
 
       //Prepare groups for syncing
       if (count($heads_groups[$head]) == 0) continue; //No groups for this Head
@@ -115,17 +121,22 @@ function civicrm_api3_unjob_Hhgroups($params) {
       //Set the keys to the group id
       $heads_groups[$head] = array_combine($group_keys, $heads_groups[$head]);
 
+      /*
       ob_start();
       print("Groups for Household $hh_id Head $head after:");
       print_r($heads_groups[$head]);
       Civi::log()->debug(ob_get_clean());
+      */
 
     }
 
+    $job_return[$hh_id]['groups'] = count($hh_groups);
+    /*
     ob_start();
     print("Actionable groups for Household $hh_id:");
     print_r($hh_groups);
     Civi::log()->debug(ob_get_clean());
+    */
 
     //hh_groups is now the actionable Parents groups across all heads of the household
     foreach ($hh_groups as $group_id => $hh_group) {
@@ -136,7 +147,14 @@ function civicrm_api3_unjob_Hhgroups($params) {
           //If the HH group has been removed, do nothing
           if ($hh_group['status'] == 'Removed') continue;
           //Otherwise add the head to the group
-          else Civi::log()->debug("Adding $head to $hh_group[title]");
+          else {
+            $result = civicrm_api3('GroupContact', 'create', [
+              'group_id' => $hh_group['group_id'],
+              'contact_id' => $head,
+            ]);
+            $job_return[$hh_id]['added'] += 1;
+            //Civi::log()->debug("Added $head to $hh_group[title] with result $result[added]");
+          }
 
         //The head has the HH group
         } else {
@@ -148,13 +166,27 @@ function civicrm_api3_unjob_Hhgroups($params) {
           else if ($hh_group['status'] == 'Added' && 
               $head_group['status'] == 'Removed' &&
               array_search($head_group['method'], ['Webform', 'API'])
-          ) Civi::log()->debug("Re-adding $head to $hh_group[title]");
+          ) {
+            $result = civicrm_api3('GroupContact', 'create', [
+              'group_id' => $hh_group['group_id'],
+              'contact_id' => $head,
+            ]);
+            $job_return[$hh_id]['re-added'] += 1;
+            //Civi::log()->debug("Re-added $head to $hh_group[title] with result $result[added]");
+          }
           //If the househld group was removed by webform and the head's had been added programatically, remove it
           else if ($hh_group['status'] == 'Removed' && 
               $hh_group['method'] == 'Webform' && 
               $head_group['status'] == 'Added' &&
-              array_search($head_group['method'], ['Webform', 'API'])
-          ) Civi::log()->debug("Removing $head from $hh_group[title]");
+              array_search($head_group['method'], ['Webform', 'API']) 
+          ) {
+            $result = civicrm_api3('GroupContact', 'create', [ //Create w. status Removed == delete
+              'id' => $head_group['id'],
+              'status' => "Removed",
+            ]);
+            $job_return[$hh_id]['removed'] += 1;
+            //Civi::log()->debug("Removed $head from $head_group[title] with result $result[removed]");
+          }
         }
       }
     }
@@ -168,7 +200,6 @@ function civicrm_api3_unjob_Hhgroups($params) {
     'parameters' => "last_subscription=$last_subscription\nlast_relation=$last_relation",
   ]);
 
-  $job_return = ['subs_hhs' => count($subs_hhs), 'rel_hhs' => count($rel_hhs)];
   return civicrm_api3_create_success($job_return, $params, 'Unjob', 'Hhgroups');
   
 }
@@ -188,7 +219,7 @@ where id in
   where id > $last_subscription
   group by contact_id, group_id
   order by max(id))
-limit 10
+limit 100
 SQL;
 
   $hh_list = [];
@@ -224,7 +255,7 @@ function relationship_hhs(&$last_relation) {
     'id' => ['>' => $last_relation],
     'relationship_type_id' => 7,
     'is_active' => 1,
-    'options' => ['limit' => 10, 'sort' => 'id ASC'],
+    'options' => ['limit' => 100, 'sort' => 'id ASC'],
   ]);
   
   //Build the list of household IDs, values[] is empty if a contact not a head of hh

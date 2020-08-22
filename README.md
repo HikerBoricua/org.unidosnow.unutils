@@ -5,7 +5,7 @@ CiviCRM utilities extension for UnidosNow.org operations.
 
 Initially created in HostGator folder dev-unidosnow-co/sites/default/files/civicrm/ext with command "ea-php72 ~/bin/civix generate:module org.unidosnow.unutils --license=AGPL-3.0 --email=it@unidosnow.org"
 
-For the first use case, inside the module folder, "ea-php72 ~/bin/civix generate:api unjob hhgroups --schedule Daily"
+For the first use case, inside the module folder, "ea-php72 ~/bin/civix generate:api unjob hhgroups --schedule Hourly"
 
 The extension is licensed under [AGPL-3.0](LICENSE.txt).
 

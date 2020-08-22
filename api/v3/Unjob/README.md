@@ -1,11 +1,15 @@
-Read from scheduled job parameters last processed subscription history ID and at the end set the parameters with the new last processed
+Scan for membership (subscriptions) changes in Parents groups involving a Head of Houshold. Propagate additions to all other Heads of the Household (unless previously removed by Admin). Propagate removals only if the most recent was by Webform and the other Heads additions were by API or Webform.
 
-Then CRM_CORE_DAO::executeQuery to fetch rows from civicrm_subscription_history with id > last processed. Keep only those added and removed by webform and only the most recent status per cid and groupid
+Uses API v3 but the key tables are civicrm_subscription_history and civicrm_group_contact.
 
-With all the unique status/cid/groupid use API Relationship to keep only cids w. Head of household relationships
+Reads from scheduled job parameters:
+- last processed subscription history ID
+- last processed head of household relationship ID
+At the end rewrites the job's parameters with the new last processed so the next run picks up from there
 
-For each Relationship see if the Household has another Head
-
-For each other Head use API GroupContact to make sure they are (re-)added or removed from groups to match their co-heads. Careful to only override/apply things done by Webform, if Admin/User does anything to one they need to do to the other head as well if that was the intent
-
-
+API result is an array of Households scanned. For each household ID there's an array (empty if no Heads of Household) with:
+heads => number of heads of household
+groups => number of groups with "parents" in the title that at least one head of household is/was in
+added => number of new head -> group memberships
+re-added => number of head -> group memberships that were re-established
+removed => number of removed head -> group memberships
