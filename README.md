@@ -40,7 +40,7 @@ cv en utils
 
 ## Usage
 
-See README.md in api/v3/Job/
+See README_*.md in api/v3/Unjob/
 
 ## Known Issues
 
