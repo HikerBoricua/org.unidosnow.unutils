@@ -14,7 +14,7 @@ return [
       'run_frequency' => 'Always',
       'api_entity' => 'Unjob',
       'api_action' => 'Attendevent',
-      'parameters' => 'cron_minutes=15\nevent_type_id=7',
+      'parameters' => 'cron_minutes=15\nevent_type=7',
     ],
   ],
 ];

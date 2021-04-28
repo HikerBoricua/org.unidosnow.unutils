@@ -10,9 +10,8 @@ use CRM_Unutils_ExtensionUtil as E;
  * @see https://docs.civicrm.org/dev/en/latest/framework/api-architecture/
  */
 function _civicrm_api3_unjob_Attendevent_spec(&$spec) {
-  //$spec['magicword']['api.required'] = 1;
   $spec['cron_minutes']['api.required'] = 1; //Minutes between cron ticks, this job should run always
-  $spec['event_type']['api.required'] = 1; //ID of event type to activate and update registrations
+  $spec['event_type']['api.required'] = 1; //ID of event type to activate and update registrations (type's title works too)
 }
 
 /**
@@ -76,15 +75,52 @@ function civicrm_api3_unjob_Attendevent($params) {
       ]);
     }
 
-    //Process event's registrations
+    //Process event's participant records registered between (start - buffer) and end
+    $switched = registered_to_attended($event['id'],
+      date_create($event['start_date'])->modify("-".$window_buffer." minutes")->format('Y-m-d H:i:s'),
+      $event['end_date']);
 
   }
 
   $returnValues = [];
   return civicrm_api3_create_success($returnValues, $params, 'Unjob', 'Attendevent');
+}
 
+function registered_to_attended($event, $from, $to) {
+  //Change participant status from registered to attended if record created within the event's time window
+  ob_start();
+  printf("Event: %s\n", $event);
+  printf("Dates from %s to %s\n", $from, $to);
+  Civi::log()->debug(ob_get_clean());
 
+  $registereds = civicrm_api3('Participant', 'get', [
+    'sequential' => 1,
+    'event_id' => $event,
+    'status_id' => 'Registered',
+    'register_date' => ['>=' => $from],
+    // 'register_date' => ['<=' => $to], BETWEEN failed on syntax and adding this killed all register_date filtering
+  ]);
 
+  ob_start();
+  print "Registered:\n";
+  print_r($registereds);
+  print "\n";
+  Civi::log()->debug(ob_get_clean());
+  
+  foreach($registereds['values'] as $registered) {
+    if (strtotime($registered['participant_register_date']) > strtotime($to)) continue; //Other half of the misfiring BETWEEN in api3
+    civicrm_api3('Participant', 'create', [
+      'id' => $registered['id'],
+      'status_id' => "Attended",
+    ]);
+
+    ob_start();
+    printf("%s to attended\n", $registered['display_name']);
+    printf("Comparison %d > %d\n", strtotime($registered['participant_register_date']), strtotime($to));
+    Civi::log()->debug(ob_get_clean());
+  }
+
+}
 
 
 
@@ -120,4 +156,4 @@ function civicrm_api3_unjob_Attendevent($params) {
   else {
     throw new API_Exception('Everyone knows that the magicword is "sesame"', 'magicword_incorrect');
   } */
-}
+
