@@ -11,7 +11,8 @@ use CRM_Unutils_ExtensionUtil as E;
  */
 function _civicrm_api3_unjob_Attendevent_spec(&$spec) {
   $spec['cron_minutes']['api.required'] = 1; //Minutes between cron ticks, this job should run always
-  $spec['event_type']['api.required'] = 1; //ID of event type to activate and update registrations (type's title works too)
+  $spec['waiting_type']['api.required'] = 1; //ID of event type to switch/activate and update registrations (type's title works too)
+  $spec['recording_type']['api.required'] = 1; //ID that events switch to and remain in
 }
 
 /**
@@ -28,7 +29,8 @@ function _civicrm_api3_unjob_Attendevent_spec(&$spec) {
  */
 function civicrm_api3_unjob_Attendevent($params) {
   $window_buffer = $params['cron_minutes'] + 5; //Attendance window opens minimum 5 minutes pre-start and stays open at least one cron cycle after end
-  $event_type = $params['event_type'];
+  $waiting_type = $params['waiting_type'];
+  $recording_type = $params['recording_type'];
 
   //Date objects bracketing the events of interest
   //(start - buffer <= now <= end + buffer) rewritten as (start <= now + buffer AND end >= now - buffer)
@@ -39,14 +41,15 @@ function civicrm_api3_unjob_Attendevent($params) {
 
   ob_start();
   printf("Dates from %s to %s\n", $dt_from->format('Y-m-d H:i:s'), $dt_to->format('Y-m-d H:i:s'));
-  printf("Event type: %s\n", $event_type);
+  printf("Event type: %s\n", $waiting_type);
   print "\n";
   Civi::log()->debug(ob_get_clean());
 
   //Get events of interest
   $events = civicrm_api3('Event', 'get', [
     'sequential' => 1, //The values[] keys aren't useful
-    'event_type_id' => $event_type,
+    'is_active' => 1,
+    'event_type_id' => ['IN' => [$waiting_type, $recording_type]],
     'start_date' => ['<=' => $dt_from->format('Y-m-d H:i:s')],
     'end_date' => ['>=' => $dt_to->format('Y-m-d H:i:s')],
   ]);
@@ -67,11 +70,11 @@ function civicrm_api3_unjob_Attendevent($params) {
     printf ("id? %s\n", $event['id']);
     Civi::log()->debug(ob_get_clean());*/
 
-    //If the event is disabled, activate it
-    if (!$event['is_active']) {
+    //If the event is type "waiting" waiting, start "recording"" attendance webforms
+    if ($event['event_type_id'] == $waiting_type) {
       $result = civicrm_api3('Event', 'create', [
         'id' => $event['id'],
-        'is_active' => 1,
+        'event_type_id' => $recording_type,
       ]);
     }
 

@@ -10,11 +10,11 @@ return [
     'params' => [
       'version' => 3,
       'name' => 'Manage attendance to events w/o pre-registration',
-      'description' => 'Enable/activate events of the indicated type one cron cycle prior to their scheduled start time so they\'ll be listed in forms for participants to register their attendance, thus permitting registration via those forms only during the duration of the event. Registrations that take place during the active window will switch from "Registered" (webform default) to "Attended" during or shortly after the end of the meeting. This is not particularly compatible with the normal pre-registration workflow for Civi Participants records, hence the focus on a special activity type.',
+      'description' => 'Switches events of the "waiting" type to the "recording" type one cron cycle prior to their scheduled start time so they\'ll be listed in webforms for participants to register their attendance, thus permitting registration via those forms only during the duration of the event. Registrations that take place during the active window will switch from "Registered" (webform default) to "Attended" during or shortly after the end of the meeting. This is not particularly compatible with the normal pre-registration workflow for Civi Participants records, hence the focus on special activity types.',
       'run_frequency' => 'Always',
       'api_entity' => 'Unjob',
       'api_action' => 'Attendevent',
-      'parameters' => 'cron_minutes=15\nevent_type=7',
+      'parameters' => 'cron_minutes=15\nwaiting_type=7\nrecording_type=8',
     ],
   ],
 ];
