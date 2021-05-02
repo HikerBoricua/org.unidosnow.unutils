@@ -9,7 +9,7 @@ return [
     'entity' => 'Job',
     'params' => [
       'version' => 3,
-      'name' => 'Manage attendance to events w/o pre-registration',
+      'name' => 'Event Attendance',
       'description' => 'Switches events of the "waiting" type to the "recording" type one cron cycle prior to their scheduled start time so they\'ll be listed in webforms for participants to register their attendance.',
       'run_frequency' => 'Always',
       'api_entity' => 'Unjob',

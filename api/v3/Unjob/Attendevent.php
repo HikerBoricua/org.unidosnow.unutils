@@ -120,14 +120,27 @@ function registered_to_attended($event_id, $from, $to) {
   Civi::log()->debug(ob_get_clean());
   */
   
-  $switched = 0;
+  $new_switched = 0;
+  $all_switched = civicrm_api3('Event', 'get', [
+    'sequential' => 1,
+    'id' => $event_id,
+    'return' => ["custom_173"], //Get webform submissions from previous runs to add this run
+    ])['values'][0]['custom_173'] ?? 0;
+
+  /*ob_start();
+  print "Previous submissions:\n";
+  print_r($all_switched);
+  print "\n";
+  Civi::log()->debug(ob_get_clean());
+  */
+  
   foreach($registereds['values'] as $registered) {
     if (strtotime($registered['participant_register_date']) > strtotime($to)) continue; //Other half of the misfiring BETWEEN in api3
     civicrm_api3('Participant', 'create', [
       'id' => $registered['id'],
       'status_id' => "Attended",
     ]);
-    $switched += 1;
+    $new_switched += 1;
 
     /*ob_start();
     printf("%s to attended\n", $registered['display_name']);
@@ -135,7 +148,14 @@ function registered_to_attended($event_id, $from, $to) {
     Civi::log()->debug(ob_get_clean());
     */
   }
-  return $switched;
+
+  $all_switched += $new_switched;
+  civicrm_api3('Event', 'create', [
+    'id' => $event_id,
+    'custom_173' => $all_switched, //Save the new count of webforms submitted
+  ]);
+
+  return $new_switched;
 }
 
 function count_attendance($event_id) {
@@ -154,7 +174,7 @@ function count_attendance($event_id) {
   }
 
   civicrm_api3('Event', 'create', [
-    'id' => 160,
+    'id' => $event_id,
     'custom_129' => $attended, //Total event attendance, will be updated throughout the event's time window
   ]);
   return $attended;
