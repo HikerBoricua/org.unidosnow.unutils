@@ -109,8 +109,7 @@ function registered_to_attended($event_id, $from, $to) {
     'sequential' => 1,
     'event_id' => $event_id,
     'status_id' => 'Registered',
-    'register_date' => ['>=' => $from],
-    // 'register_date' => ['<=' => $to], BETWEEN failed on syntax and adding this killed all register_date filtering
+    'custom_176' => ['>=' => $from], //Custom field where attendance form populates submission datetime as a string
   ]);
 
   /*ob_start();
@@ -135,7 +134,7 @@ function registered_to_attended($event_id, $from, $to) {
   */
   
   foreach($registereds['values'] as $registered) {
-    if (strtotime($registered['participant_register_date']) > strtotime($to)) continue; //Other half of the misfiring BETWEEN in api3
+    if (strtotime($registered['custom_176']) > strtotime($to)) continue; //Instead of the misfiring use of BETWEEN in the participant get
     civicrm_api3('Participant', 'create', [
       'id' => $registered['id'],
       'status_id' => "Attended",
