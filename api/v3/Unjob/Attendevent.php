@@ -109,7 +109,7 @@ function registered_to_attended($event_id, $from, $to) {
     'sequential' => 1,
     'event_id' => $event_id,
     'status_id' => 'Registered',
-    'custom_176' => ['>=' => $from], //Custom field where attendance form populates submission datetime as a string
+    'custom_173' => ['>=' => $from], //Custom field where attendance form populates submission datetime as a string
   ]);
 
   /*ob_start();
@@ -123,8 +123,8 @@ function registered_to_attended($event_id, $from, $to) {
   $all_switched = civicrm_api3('Event', 'get', [
     'sequential' => 1,
     'id' => $event_id,
-    'return' => ["custom_173"], //Get webform submissions from previous runs to add this run
-    ])['values'][0]['custom_173'] ?? 0;
+    'return' => ["custom_170"], //Get webform submissions from previous runs to add this run
+    ])['values'][0]['custom_170'] ?? 0;
 
   /*ob_start();
   print "Previous submissions:\n";
@@ -134,7 +134,7 @@ function registered_to_attended($event_id, $from, $to) {
   */
   
   foreach($registereds['values'] as $registered) {
-    if (strtotime($registered['custom_176']) > strtotime($to)) continue; //Instead of the misfiring use of BETWEEN in the participant get
+    if (strtotime($registered['custom_173']) > strtotime($to)) continue; //Instead of the misfiring use of BETWEEN in the participant get
     civicrm_api3('Participant', 'create', [
       'id' => $registered['id'],
       'status_id' => "Attended",
@@ -151,7 +151,7 @@ function registered_to_attended($event_id, $from, $to) {
   $all_switched += $new_switched;
   civicrm_api3('Event', 'create', [
     'id' => $event_id,
-    'custom_173' => $all_switched, //Save the new count of webforms submitted
+    'custom_170' => $all_switched, //Save the new count of webforms submitted
   ]);
 
   return $new_switched;
