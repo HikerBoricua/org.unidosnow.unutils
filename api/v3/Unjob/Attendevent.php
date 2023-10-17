@@ -232,6 +232,7 @@ Civi::log()->debug(ob_get_clean());
   ]);
 
   //Find contacts that match registered by either email or phone
+  //Added full name match to the rule 10/17/23
   $matches = \Civi\Api4\Contact::getDuplicates()
    ->setDedupeRule('Phone_or_Email')
    ->addValue('phone_primary.phone_numeric', $phone_email['values'][0]['phone'])
