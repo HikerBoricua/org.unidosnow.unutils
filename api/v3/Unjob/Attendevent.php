@@ -190,26 +190,17 @@ function group_match($event, $registered) {
     return; //Group ID custom field
 
 ob_start();
-printf("Group id = %s\n", $group_id);
+printf("Group id: %d\n", $group_id);
 Civi::log()->debug(ob_get_clean());
 
-  $groupContacts = civicrm_api3('GroupContact', 'get', [
-    'sequential' => 1, //To access values[0] later
-    'group_id' => $group_id,
-    'options' => ['limit' => 0]
-  ]);
+  //Get array of contacts in group and children, indexed by contact id
+  $contactsGroup = getNestedContacts($group_id);
 
-  if(!is_array($groupContacts)) //Ignore if failed to get a result
+  if(!is_array($contactsGroup)) //Ignore if failed to get a result
     return;
 
-  if($groupContacts['count'] == 0) //Ignore if the group is empty
+  if(sizeof($contactsGroup) == 0) //Ignore if the group is empty
     return;
-
-  //Create an array indexed by contact id
-  $contactsGroup = [];
-  foreach ($groupContacts['values'] as $groupContact) {
-    $contactsGroup[$groupContact['contact_id']] = $groupContact;
-  }
 
 ob_start();
   echo("contactsGroup\n");
@@ -232,7 +223,7 @@ Civi::log()->debug(ob_get_clean());
   ]);
 
   //Find contacts that match registered by either email or phone
-  //Added full name match to the rule 10/17/23
+  //Added 1st and last name match 10/17/23
   $matches = \Civi\Api4\Contact::getDuplicates()
    ->setDedupeRule('Phone_or_Email')
    ->addValue('phone_primary.phone_numeric', $phone_email['values'][0]['phone'])
@@ -267,7 +258,7 @@ Civi::log()->debug(ob_get_clean());
   'subject' => 'Unexpected attendance',
   'details' => sprintf("Event: %s<br>\nAttendance form from %s (id %s)<br>\nContact is not in the event's group of \"Anticipated participants\" (id %s)<br>\nAction taken: ",
     $event['title'], $registered['display_name'],
-    $registered['contact_id'], $groupContacts['values'][0]['group_id']), 
+    $registered['contact_id'], $group_id), 
   ]];
 
 ob_start();  
@@ -313,4 +304,48 @@ Civi::log()->debug(ob_get_clean());
 
   }
 
+}
+
+//Navigate group parent-child nesting to extract all contacts associated with a group
+function getNestedContacts($groupId) {
+    $contacts = []; //Results array: key => contact_id, value => string of groups
+	
+	$groupChildren = civicrm_api4('GroupNesting', 'get', [
+	  'select' => [
+        'child_group_id',
+      ],
+      'where' => [
+        ['parent_group_id', '=', $groupId],
+      ],
+    ]);
+
+ob_start();  
+  printf("groupChildren of %d\n", $groupId);
+  print_r($groupChildren);
+Civi::log()->debug(ob_get_clean());
+
+    //Recursion down group nesting hierarchy/tree	
+    foreach ($groupChildren as $groupChild) {
+      $childContacts = getNestedContacts($groupChild['child_group_id']);
+	  foreach ($childContacts as $childContactId => $childContactString)
+	    $contacts[$childContactId] .= $childContactString; 
+	}
+
+    //Any group, whether branch or leaf, may have contacts
+    $groupContacts = civicrm_api4('GroupContact', 'get', [
+      'select' => [
+        'contact_id',
+      ],
+      'where' => [
+        ['group_id', '=', $groupId],
+        ['status', '=', 'Added'],
+        ['contact_id.is_deleted', '=', FALSE],
+      ],
+    ]); 
+
+    foreach ($groupContacts as $groupContact) {
+	  $contacts[$groupContact['contact_id']] .= strval($groupId)." ";
+    }
+	
+    return $contacts;
 }
